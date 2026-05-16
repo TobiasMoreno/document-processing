@@ -1,0 +1,187 @@
+{
+  "info": {
+    "name": "Document Processing",
+    "description": "Endpoints del Document Intelligence Pipeline. Base URL configurable vía la variable {{baseUrl}} en el environment.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "5b8f0c5e-1d3e-4f2b-9a7a-7c1b1f5d2c00"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Documents",
+      "item": [
+        {
+          "name": "POST /documents — upload (happy path)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "description": "Archivo a subir (PDF, DOCX, DOC, PNG o JPEG). Máx 10 MB.",
+                  "src": []
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/documents",
+              "host": ["{{baseUrl}}"],
+              "path": ["documents"]
+            },
+            "description": "Sube un documento. Responde 201 con { documentId, status: UPLOADED }.\n\nValidaciones:\n- Tamaño máx: 10 MB\n- Content-types: application/pdf, application/msword, application/vnd.openxmlformats-officedocument.wordprocessingml.document, image/png, image/jpeg\n- El content-type declarado debe coincidir con el detectado por sniffing (Tika)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('returns documentId UUID', () => pm.expect(body.documentId).to.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/));",
+                  "pm.test('status is UPLOADED', () => pm.expect(body.status).to.eql('UPLOADED'));",
+                  "pm.collectionVariables.set('lastDocumentId', body.documentId);"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "201 Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "body": { "mode": "formdata", "formdata": [{ "key": "file", "type": "file", "src": [] }] },
+                "url": { "raw": "{{baseUrl}}/documents", "host": ["{{baseUrl}}"], "path": ["documents"] }
+              },
+              "status": "Created",
+              "code": 201,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"documentId\": \"11111111-2222-3333-4444-555555555555\",\n  \"status\": \"UPLOADED\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "POST /documents — empty file (400)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "description": "Cargar un archivo de 0 bytes para reproducir EMPTY_FILE.",
+                  "src": []
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/documents",
+              "host": ["{{baseUrl}}"],
+              "path": ["documents"]
+            },
+            "description": "Espera 400 con error EMPTY_FILE cuando el archivo está vacío."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('error EMPTY_FILE', () => pm.expect(pm.response.json().error).to.eql('EMPTY_FILE'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /documents — unsupported type (400)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "description": "Cargar un .txt, .zip o similar para reproducir INVALID_CONTENT_TYPE.",
+                  "src": []
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/documents",
+              "host": ["{{baseUrl}}"],
+              "path": ["documents"]
+            },
+            "description": "Espera 400 con error INVALID_CONTENT_TYPE cuando el archivo no es PDF/DOC/DOCX/PNG/JPEG."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('error INVALID_CONTENT_TYPE', () => pm.expect(pm.response.json().error).to.eql('INVALID_CONTENT_TYPE'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /documents — too large (400)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "description": "Cargar un archivo > 10 MB para reproducir FILE_TOO_LARGE.",
+                  "src": []
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/documents",
+              "host": ["{{baseUrl}}"],
+              "path": ["documents"]
+            },
+            "description": "Espera 400 con error FILE_TOO_LARGE cuando el archivo supera el límite de 10 MB."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('error FILE_TOO_LARGE', () => pm.expect(pm.response.json().error).to.eql('FILE_TOO_LARGE'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    }
+  ]
+}

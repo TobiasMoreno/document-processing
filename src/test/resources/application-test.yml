@@ -1,0 +1,23 @@
+# Testcontainers-driven overrides are applied programmatically via @DynamicPropertySource.
+# This file only carries safe defaults for tests that boot the full Spring context.
+
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+
+app:
+  storage:
+    minio:
+      endpoint: http://localhost:9000
+      access-key: minioadmin
+      secret-key: minioadmin
+      bucket: documents
+  upload:
+    max-file-size: 10485760
+    allowed-content-types:
+      - application/pdf
+      - application/msword
+      - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+      - image/png
+      - image/jpeg
