@@ -1,10 +1,12 @@
 package document_processing.tobias_moreno.document;
 
 import document_processing.tobias_moreno.config.UploadProperties;
+import document_processing.tobias_moreno.document.event.DocumentUploadedEvent;
 import document_processing.tobias_moreno.storage.ObjectKeyGenerator;
 import document_processing.tobias_moreno.storage.ObjectStorage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -23,17 +25,20 @@ public class DocumentUploadService {
     private final ContentTypeDetector contentTypeDetector;
     private final DocumentRepository documentRepository;
     private final UploadProperties uploadProperties;
+    private final ApplicationEventPublisher eventPublisher;
 
     public DocumentUploadService(ObjectStorage objectStorage,
                                  ObjectKeyGenerator keyGenerator,
                                  ContentTypeDetector contentTypeDetector,
                                  DocumentRepository documentRepository,
-                                 UploadProperties uploadProperties) {
+                                 UploadProperties uploadProperties,
+                                 ApplicationEventPublisher eventPublisher) {
         this.objectStorage = objectStorage;
         this.keyGenerator = keyGenerator;
         this.contentTypeDetector = contentTypeDetector;
         this.documentRepository = documentRepository;
         this.uploadProperties = uploadProperties;
+        this.eventPublisher = eventPublisher;
     }
 
     public Document upload(MultipartFile file) {
@@ -79,8 +84,9 @@ public class DocumentUploadService {
                 storageKey,
                 DocumentStatus.UPLOADED);
 
+        Document persisted;
         try {
-            return documentRepository.save(document);
+            persisted = documentRepository.save(document);
         } catch (RuntimeException dbError) {
             try {
                 objectStorage.delete(storageKey);
@@ -90,6 +96,8 @@ public class DocumentUploadService {
             }
             throw dbError;
         }
+        eventPublisher.publishEvent(new DocumentUploadedEvent(persisted.getId()));
+        return persisted;
     }
 
     private String detectContentType(MultipartFile file) {

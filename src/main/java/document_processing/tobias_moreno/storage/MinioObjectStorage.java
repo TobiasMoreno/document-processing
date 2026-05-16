@@ -2,6 +2,7 @@ package document_processing.tobias_moreno.storage;
 
 import document_processing.tobias_moreno.config.MinioProperties;
 import io.minio.BucketExistsArgs;
+import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import io.minio.RemoveObjectArgs;
@@ -54,6 +55,15 @@ public class MinioObjectStorage implements ObjectStorage {
                             .build());
         } catch (Exception e) {
             throw new StorageException("Failed to store object '" + key + "' in bucket '" + bucket + "'", e);
+        }
+    }
+
+    @Override
+    public InputStream read(String key) {
+        try {
+            return client.getObject(GetObjectArgs.builder().bucket(bucket).object(key).build());
+        } catch (Exception e) {
+            throw new StorageException("Failed to read object '" + key + "' from bucket '" + bucket + "'", e);
         }
     }
 

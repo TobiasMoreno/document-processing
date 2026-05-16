@@ -4,6 +4,6 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-@EnableConfigurationProperties({MinioProperties.class, UploadProperties.class})
+@EnableConfigurationProperties({MinioProperties.class, UploadProperties.class, AsyncProperties.class})
 public class AppConfig {
 }

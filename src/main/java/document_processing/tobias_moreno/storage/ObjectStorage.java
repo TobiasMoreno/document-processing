@@ -6,5 +6,7 @@ public interface ObjectStorage {
 
     void store(String key, InputStream in, long size, String contentType);
 
+    InputStream read(String key);
+
     void delete(String key);
 }

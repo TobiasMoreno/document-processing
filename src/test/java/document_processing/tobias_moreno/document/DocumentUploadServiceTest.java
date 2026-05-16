@@ -6,6 +6,7 @@ import document_processing.tobias_moreno.storage.ObjectStorage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -41,6 +42,7 @@ class DocumentUploadServiceTest {
     private ContentTypeDetector contentTypeDetector;
     private DocumentRepository repository;
     private UploadProperties uploadProperties;
+    private ApplicationEventPublisher eventPublisher;
     private DocumentUploadService service;
 
     @BeforeEach
@@ -57,7 +59,8 @@ class DocumentUploadServiceTest {
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 "image/png",
                 "image/jpeg"));
-        service = new DocumentUploadService(objectStorage, keyGenerator, contentTypeDetector, repository, uploadProperties);
+        eventPublisher = mock(ApplicationEventPublisher.class);
+        service = new DocumentUploadService(objectStorage, keyGenerator, contentTypeDetector, repository, uploadProperties, eventPublisher);
     }
 
     @Test

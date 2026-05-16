@@ -145,6 +145,114 @@
           "response": []
         },
         {
+          "name": "GET /documents/{id} — metadata (happy path)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/documents/{{lastDocumentId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["documents", "{{lastDocumentId}}"]
+            },
+            "description": "Devuelve la metadata del documento (sin storagePath). Usa la variable {{lastDocumentId}} que el request de upload guarda automáticamente."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('documentId matches', () => pm.expect(body.documentId).to.eql(pm.collectionVariables.get('lastDocumentId')));",
+                  "pm.test('storagePath is NOT exposed', () => pm.expect(body).to.not.have.property('storagePath'));",
+                  "pm.test('status field present', () => pm.expect(body.status).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /documents/{id}/status — status only",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/documents/{{lastDocumentId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["documents", "{{lastDocumentId}}", "status"]
+            },
+            "description": "Devuelve únicamente { documentId, status }."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('only documentId and status', () => pm.expect(Object.keys(body).sort()).to.eql(['documentId', 'status']));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /documents/{id} — 404 unknown id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/documents/00000000-0000-0000-0000-000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["documents", "00000000-0000-0000-0000-000000000000"]
+            },
+            "description": "Espera 404 con error DOCUMENT_NOT_FOUND para un UUID válido pero inexistente."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('error DOCUMENT_NOT_FOUND', () => pm.expect(pm.response.json().error).to.eql('DOCUMENT_NOT_FOUND'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /documents/{id} — 400 malformed id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/documents/not-a-uuid",
+              "host": ["{{baseUrl}}"],
+              "path": ["documents", "not-a-uuid"]
+            },
+            "description": "Espera 400 con error INVALID_DOCUMENT_ID para un path no-UUID."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('error INVALID_DOCUMENT_ID', () => pm.expect(pm.response.json().error).to.eql('INVALID_DOCUMENT_ID'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
           "name": "POST /documents — too large (400)",
           "request": {
             "method": "POST",
