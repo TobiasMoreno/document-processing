@@ -1,12 +1,14 @@
 package document_processing.tobias_moreno.document;
 
 import document_processing.tobias_moreno.config.UploadProperties;
-import document_processing.tobias_moreno.document.event.DocumentUploadedEvent;
+import document_processing.tobias_moreno.document.event.DocumentEventPublisher;
+import document_processing.tobias_moreno.document.event.DocumentUploadedKafkaEvent;
 import document_processing.tobias_moreno.storage.ObjectKeyGenerator;
 import document_processing.tobias_moreno.storage.ObjectStorage;
+import document_processing.tobias_moreno.web.CorrelationIdFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.ApplicationEventPublisher;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -25,20 +27,20 @@ public class DocumentUploadService {
     private final ContentTypeDetector contentTypeDetector;
     private final DocumentRepository documentRepository;
     private final UploadProperties uploadProperties;
-    private final ApplicationEventPublisher eventPublisher;
+    private final DocumentEventPublisher kafkaEventPublisher;
 
     public DocumentUploadService(ObjectStorage objectStorage,
                                  ObjectKeyGenerator keyGenerator,
                                  ContentTypeDetector contentTypeDetector,
                                  DocumentRepository documentRepository,
                                  UploadProperties uploadProperties,
-                                 ApplicationEventPublisher eventPublisher) {
+                                 DocumentEventPublisher kafkaEventPublisher) {
         this.objectStorage = objectStorage;
         this.keyGenerator = keyGenerator;
         this.contentTypeDetector = contentTypeDetector;
         this.documentRepository = documentRepository;
         this.uploadProperties = uploadProperties;
-        this.eventPublisher = eventPublisher;
+        this.kafkaEventPublisher = kafkaEventPublisher;
     }
 
     public Document upload(MultipartFile file) {
@@ -96,8 +98,14 @@ public class DocumentUploadService {
             }
             throw dbError;
         }
-        eventPublisher.publishEvent(new DocumentUploadedEvent(persisted.getId()));
+        kafkaEventPublisher.publishUploaded(
+                DocumentUploadedKafkaEvent.of(persisted.getId(), resolveCorrelationId()));
         return persisted;
+    }
+
+    private static String resolveCorrelationId() {
+        String fromMdc = MDC.get(CorrelationIdFilter.MDC_KEY);
+        return (fromMdc != null && !fromMdc.isBlank()) ? fromMdc : UUID.randomUUID().toString();
     }
 
     private String detectContentType(MultipartFile file) {

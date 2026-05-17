@@ -1,12 +1,13 @@
 package document_processing.tobias_moreno.document;
 
 import document_processing.tobias_moreno.config.UploadProperties;
+import document_processing.tobias_moreno.document.event.DocumentEventPublisher;
+import document_processing.tobias_moreno.document.event.DocumentUploadedKafkaEvent;
 import document_processing.tobias_moreno.storage.ObjectKeyGenerator;
 import document_processing.tobias_moreno.storage.ObjectStorage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -42,7 +43,7 @@ class DocumentUploadServiceTest {
     private ContentTypeDetector contentTypeDetector;
     private DocumentRepository repository;
     private UploadProperties uploadProperties;
-    private ApplicationEventPublisher eventPublisher;
+    private DocumentEventPublisher kafkaEventPublisher;
     private DocumentUploadService service;
 
     @BeforeEach
@@ -59,8 +60,26 @@ class DocumentUploadServiceTest {
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 "image/png",
                 "image/jpeg"));
-        eventPublisher = mock(ApplicationEventPublisher.class);
-        service = new DocumentUploadService(objectStorage, keyGenerator, contentTypeDetector, repository, uploadProperties, eventPublisher);
+        kafkaEventPublisher = mock(DocumentEventPublisher.class);
+        service = new DocumentUploadService(objectStorage, keyGenerator, contentTypeDetector, repository, uploadProperties, kafkaEventPublisher);
+    }
+
+    @Test
+    void publishesKafkaEventWithDocumentIdOnSuccess() throws IOException {
+        MockMultipartFile file = new MockMultipartFile("file", "invoice.pdf", "application/pdf", PDF_BYTES);
+        when(contentTypeDetector.detect(any(InputStream.class), eq("invoice.pdf"))).thenReturn("application/pdf");
+        when(repository.save(any(Document.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Document saved = service.upload(file);
+
+        ArgumentCaptor<DocumentUploadedKafkaEvent> eventCaptor = ArgumentCaptor.forClass(DocumentUploadedKafkaEvent.class);
+        verify(kafkaEventPublisher).publishUploaded(eventCaptor.capture());
+        DocumentUploadedKafkaEvent event = eventCaptor.getValue();
+        assertThat(event.documentId()).isEqualTo(saved.getId());
+        assertThat(event.type()).isEqualTo("DocumentUploaded");
+        assertThat(event.eventId()).isNotNull();
+        assertThat(event.occurredAt()).isNotNull();
+        assertThat(event.correlationId()).isNotBlank();
     }
 
     @Test

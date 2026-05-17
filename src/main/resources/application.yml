@@ -40,3 +40,17 @@ app:
       - application/vnd.openxmlformats-officedocument.wordprocessingml.document
       - image/png
       - image/jpeg
+  kafka:
+    bootstrap-servers: ${APP_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    publish-timeout-ms: 5000
+    topics:
+      document-uploaded: document.uploaded
+    consumer:
+      group-id: document-processor
+      concurrency: 1
+  ocr:
+    # Absolute path to the directory containing Tesseract .traineddata files.
+    # Override via APP_OCR_TESSDATA_PATH (e.g. /usr/share/tesseract-ocr/4.00/tessdata on Linux,
+    # C:\\Program Files\\Tesseract-OCR\\tessdata on Windows).
+    tessdata-path: ${APP_OCR_TESSDATA_PATH:}
+    language: eng

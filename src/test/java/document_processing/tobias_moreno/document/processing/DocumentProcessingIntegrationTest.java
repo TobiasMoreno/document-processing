@@ -4,19 +4,27 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import document_processing.tobias_moreno.document.DocumentRepository;
 import document_processing.tobias_moreno.document.DocumentStatus;
+import document_processing.tobias_moreno.document.processing.TextExtractionException;
+import document_processing.tobias_moreno.document.processing.ocr.OcrService;
 import document_processing.tobias_moreno.document.result.DocumentResultRepository;
 import document_processing.tobias_moreno.support.Fixtures;
 import document_processing.tobias_moreno.support.IntegrationTestBase;
+import document_processing.tobias_moreno.support.StubOcrService;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
+import java.io.InputStream;
 import java.time.Duration;
 import java.util.UUID;
 
@@ -24,11 +32,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+@Import(DocumentProcessingIntegrationTest.OcrTestConfig.class)
 class DocumentProcessingIntegrationTest extends IntegrationTestBase {
 
     @Autowired WebApplicationContext context;
     @Autowired DocumentRepository documentRepository;
     @Autowired DocumentResultRepository resultRepository;
+    @Autowired StubOcrService ocrService;
 
     private MockMvc mockMvc;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -38,6 +48,16 @@ class DocumentProcessingIntegrationTest extends IntegrationTestBase {
         mockMvc = MockMvcBuilders.webAppContextSetup(context).build();
         resultRepository.deleteAll();
         documentRepository.deleteAll();
+        ocrService.reset();
+    }
+
+    @TestConfiguration
+    static class OcrTestConfig {
+        @Bean
+        @Primary
+        StubOcrService stubOcrService() {
+            return new StubOcrService();
+        }
     }
 
     private UUID uploadFile(String filename, String contentType, byte[] bytes) throws Exception {
@@ -64,7 +84,7 @@ class DocumentProcessingIntegrationTest extends IntegrationTestBase {
         assertThat(documentRepository.findById(id).orElseThrow().getProcessedAt()).isNotNull();
         assertThat(resultRepository.findById(id)).hasValueSatisfying(r -> {
             assertThat(r.getRawText()).contains("INVOICE 0001");
-            assertThat(r.getDocumentType()).isNull();
+            assertThat(r.getDocumentType()).isEqualTo("UNKNOWN");
             assertThat(r.getExtractedData()).isNull();
         });
     }
@@ -81,15 +101,58 @@ class DocumentProcessingIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void pngUploadEventuallyFailsWithOcrMessage() throws Exception {
+    void pngUploadReachesProcessedWithOcrText() throws Exception {
+        ocrService.respondWith("HELLO OCR");
+        UUID id = uploadFile("pixel.png", "image/png", Fixtures.minimalPng());
+
+        awaitStatus(id, DocumentStatus.PROCESSED);
+
+        assertThat(documentRepository.findById(id).orElseThrow().getProcessedAt()).isNotNull();
+        assertThat(resultRepository.findById(id)).hasValueSatisfying(r ->
+                assertThat(r.getRawText()).contains("HELLO OCR"));
+    }
+
+    @Test
+    void pngUploadFailsWithSafeMessageWhenOcrThrows() throws Exception {
+        ocrService.failWith(new TextExtractionException("internal: tessdata at /tmp/foo missing"));
         UUID id = uploadFile("pixel.png", "image/png", Fixtures.minimalPng());
 
         awaitStatus(id, DocumentStatus.FAILED);
 
         var document = documentRepository.findById(id).orElseThrow();
-        assertThat(document.getErrorMessage()).isEqualTo("OCR not implemented yet");
+        assertThat(document.getErrorMessage()).isEqualTo("Failed to extract text");
         assertThat(document.getProcessedAt()).isNotNull();
         assertThat(resultRepository.findById(id)).isEmpty();
+    }
+
+    @Test
+    void facturaCPdfIsClassifiedAsInvoiceWithStructuredData() throws Exception {
+        byte[] pdf;
+        try (InputStream in = getClass().getResourceAsStream("/fixtures/factura-c.pdf")) {
+            assertThat(in).isNotNull();
+            pdf = in.readAllBytes();
+        }
+        UUID id = uploadFile("factura.pdf", "application/pdf", pdf);
+
+        awaitStatus(id, DocumentStatus.PROCESSED);
+
+        assertThat(resultRepository.findById(id)).hasValueSatisfying(r -> {
+            assertThat(r.getDocumentType()).isEqualTo("INVOICE");
+            assertThat(r.getExtractedData()).isNotNull();
+            JsonNode payload;
+            try {
+                payload = objectMapper.readTree(r.getExtractedData());
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+            assertThat(payload.get("invoiceNumber").asText()).isEqualTo("00001-00000001");
+            assertThat(payload.get("issueDate").asText()).isEqualTo("2026-02-25");
+            assertThat(payload.get("total").decimalValue()).isEqualByComparingTo("850000.00");
+            assertThat(payload.get("currency").asText()).isEqualTo("ARS");
+            assertThat(payload.get("issuerCuit").asText()).isEqualTo("20428563787");
+            assertThat(payload.get("customerCuit").asText()).isEqualTo("20111111112");
+            assertThat(payload.get("cae").asText()).isEqualTo("86096124599717");
+        });
     }
 
     @Test

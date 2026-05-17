@@ -9,6 +9,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.MinIOContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.kafka.ConfluentKafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -17,8 +18,9 @@ public abstract class IntegrationTestBase {
 
     static final String BUCKET = "documents";
 
-    static final PostgreSQLContainer<?> POSTGRES;
-    static final MinIOContainer MINIO;
+    protected static final PostgreSQLContainer<?> POSTGRES;
+    protected static final MinIOContainer MINIO;
+    protected static final ConfluentKafkaContainer KAFKA;
 
     static {
         POSTGRES = new PostgreSQLContainer<>(DockerImageName.parse("postgres:16-alpine"))
@@ -28,8 +30,10 @@ public abstract class IntegrationTestBase {
         MINIO = new MinIOContainer(DockerImageName.parse("minio/minio:latest"))
                 .withUserName("minioadmin")
                 .withPassword("minioadmin");
+        KAFKA = new ConfluentKafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.0"));
         POSTGRES.start();
         MINIO.start();
+        KAFKA.start();
         try {
             MinioClient bootstrap = MinioClient.builder()
                     .endpoint(MINIO.getS3URL())
@@ -53,5 +57,7 @@ public abstract class IntegrationTestBase {
         registry.add("app.storage.minio.access-key", MINIO::getUserName);
         registry.add("app.storage.minio.secret-key", MINIO::getPassword);
         registry.add("app.storage.minio.bucket", () -> BUCKET);
+        registry.add("app.kafka.bootstrap-servers", KAFKA::getBootstrapServers);
+        registry.add("spring.kafka.bootstrap-servers", KAFKA::getBootstrapServers);
     }
 }

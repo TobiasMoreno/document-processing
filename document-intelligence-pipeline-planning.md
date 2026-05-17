@@ -645,7 +645,7 @@ Tareas:
 
 ---
 
-### Fase 4 - OCR
+### Fase 4 - OCR ✅
 
 Objetivo:
 
@@ -655,14 +655,21 @@ Extraer texto desde imágenes
 
 Tareas:
 
-- Integrar Tesseract OCR.
-- Crear `ImageOcrTextExtractor`.
-- Manejar errores de OCR.
-- Agregar pruebas con imágenes simples.
+- Integrar Tesseract OCR (Tess4J).
+- Crear `ImageOcrTextExtractor` que delega en `OcrService`.
+- Implementación inicial `TesseractOcrService`, configurada por `OcrProperties` (`app.ocr.tessdata-path`, `app.ocr.language`).
+- Manejar errores de OCR mapeándolos a `TextExtractionException`.
+- Pruebas con imágenes simples (unit con mock, integration con stub, test real condicional a `APP_OCR_TESSDATA_PATH`).
+
+Para correr OCR localmente:
+
+1. Instalar Tesseract en el host (Windows: instalador oficial; Linux: paquete `tesseract-ocr`).
+2. Setear `APP_OCR_TESSDATA_PATH` apuntando al directorio que contiene `eng.traineddata`.
+3. (Opcional) Overridear el idioma con `APP_OCR_LANGUAGE`.
 
 ---
 
-### Fase 5 - Data extraction
+### Fase 5 - Data extraction ✅
 
 Objetivo:
 
@@ -672,15 +679,30 @@ Convertir texto en datos estructurados
 
 Tareas:
 
-- Crear `DocumentDataExtractor`.
-- Crear extractor inicial para facturas.
-- Extraer fecha, monto, moneda, proveedor y número.
-- Validar resultado.
-- Guardar JSON en `DocumentResult`.
+- Crear `DocumentDataExtractor` + registry con auto-discovery Spring y soft-fail.
+- Crear `InvoiceDataExtractor` para Factura C argentina (AFIP cód. 011) basado en regex.
+- Validar `InvoiceData` con Bean Validation (Jakarta) dentro del registry.
+- Persistir `documentType` (enum como string) y `extractedData` (JSON) en `document_result`.
+- Tratar fallos de clasificación como `UNKNOWN` sin transicionar a `FAILED` — el `rawText` sigue persistiendo.
+
+Campos extraídos para Factura C:
+
+```txt
+invoiceNumber (formato PV-CN, ej "00001-00000001")
+issueDate (ISO yyyy-MM-dd)
+dueDate
+subtotal, total (BigDecimal, parseo AR-locale)
+currency (ARS fijo)
+issuerCuit, issuerName
+customerCuit, customerName
+cae (14 dígitos)
+```
+
+Validación CUIT con dígito verificador AR. Fixture de prueba: `src/test/resources/fixtures/factura-c.pdf`.
 
 ---
 
-### Fase 6 - Kafka producer
+### Fase 6 - Kafka producer ✅
 
 Objetivo:
 
@@ -690,15 +712,19 @@ Publicar evento cuando se sube un documento
 
 Tareas:
 
-- Agregar Spring Kafka.
-- Configurar Kafka producer.
-- Crear evento `DocumentUploaded`.
-- Publicar evento desde `document-api`.
-- Agregar `correlationId`.
+- Agregar `spring-kafka` y configurar producer (acks=all, idempotence, JSON serializer).
+- `DocumentEventPublisher` interface + impl `KafkaDocumentEventPublisher` con falla blanda (no rompe upload si broker está caído).
+- Envelope JSON `DocumentUploadedKafkaEvent` con `eventId`, `type`, `documentId`, `occurredAt`, `correlationId`.
+- Topic `document.uploaded` (configurable, 3 particiones, RF 1 en local).
+- `CorrelationIdFilter` (`X-Correlation-Id` header, fallback a UUID, MDC).
+- docker-compose: Bitnami Kafka KRaft + kafka-ui en `localhost:8080`.
+- El `ApplicationEventPublisher` interno se mantiene — el switch a Kafka consumer real es Fase 7.
+
+Limitación conocida: si la JVM muere entre `save` y `publish`, se pierde el evento Kafka. Outbox queda para Fase 8.
 
 ---
 
-### Fase 7 - Kafka consumer / worker
+### Fase 7 - Kafka consumer / worker ✅
 
 Objetivo:
 
@@ -708,14 +734,16 @@ Procesar documentos en background
 
 Tareas:
 
-- Crear `document-worker`.
-- Configurar Kafka consumer.
-- Consumir `DocumentUploaded`.
-- Actualizar estado a `PROCESSING`.
-- Ejecutar parsing.
-- Guardar resultado.
-- Actualizar estado a `PROCESSED`.
-- Publicar `DocumentProcessed`.
+- `DocumentUploadedKafkaConsumer` con `@KafkaListener` suscrito a `document.uploaded` (groupId `document-processor`, configurable).
+- `ConsumerFactory` con `JsonDeserializer<DocumentUploadedKafkaEvent>` sin type headers, `auto-offset-reset=earliest`, `enable-auto-commit=false`.
+- `ConcurrentKafkaListenerContainerFactory` con ack mode RECORD (default) y concurrency=1 inicial (configurable).
+- El consumer propaga `event.correlationId()` a MDC durante el handler y llama a `DocumentProcessingService.process(documentId)`.
+- **Switch hard**: borrados `DocumentProcessingListener`, `DocumentUploadedEvent`, `AsyncConfig`, `AsyncProperties` y el `ApplicationEventPublisher.publishEvent(...)` del upload.
+- Idempotencia ante redelivery: el `markAsProcessing` CAS existente (`UPDATE WHERE status=UPLOADED`) hace skip transparente. Sin tabla extra de eventIds.
+
+`DocumentProcessed` y `DocumentProcessingFailed` quedan para Fase 8/9 cuando agreguemos retry+DLT.
+
+Limitación conocida: si Kafka cae justo cuando el upload publica, el doc queda `UPLOADED` para siempre (el publisher loguea ERROR pero no reintenta). Outbox queda para Fase 8.
 
 ---
 

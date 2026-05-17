@@ -10,6 +10,16 @@
 #   MinIO API  http://localhost:9000  root=minioadmin pass=minioadmin
 #   MinIO UI   http://localhost:9001  (same credentials)
 #   Bucket     "documents" is created automatically by minio-init.
+#
+# OCR (Tesseract via Tess4J):
+#   The app reads tessdata files from app.ocr.tessdata-path (env APP_OCR_TESSDATA_PATH).
+#   Default language is "eng" (override with APP_OCR_LANGUAGE).
+#   Local setup options:
+#     - Windows: install Tesseract-OCR and point APP_OCR_TESSDATA_PATH at e.g.
+#       C:\Program Files\Tesseract-OCR\tessdata
+#     - Linux/macOS: install tesseract-ocr and point at /usr/share/tesseract-ocr/4.00/tessdata
+#       (or wherever the package places the .traineddata files).
+#   When the app runs in a container, mount the tessdata directory and set the env var.
 
 services:
   postgres:
@@ -45,6 +55,37 @@ services:
       timeout: 5s
       retries: 10
 
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    environment:
+      CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,PLAINTEXT_HOST://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    ports:
+      - "9092:29092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    ports:
+      - "8080:8080"
+
   minio-init:
     image: minio/mc:latest
     depends_on:
@@ -61,3 +102,4 @@ services:
 volumes:
   postgres-data:
   minio-data:
+  kafka-data:
